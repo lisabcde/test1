@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>庫存掃碼（外部版）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; margin: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    #video { width: 100%; border-radius: 12px; background: #000; }
+    input, button { font-size: 16px; padding: 10px; border-radius: 10px; border: 1px solid #ccc; }
+    button { border: none; cursor: pointer; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    .muted { color: #666; font-size: 13px; }
+    .ok { color: #0a7; }
+    .bad { color: #c00; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <label class="muted">你的 Apps Script Web App /exec URL</label>
+    <input id="apiUrl" placeholder="貼上 https://script.google.com/.../exec" style="width:100%;">
+    <label class="muted" style="display:block; margin-top:8px;">API Key（跟 Code.gs 的 API_KEY 一樣）</label>
+    <input id="apiKey" placeholder="貼上你的 key" style="width:100%;">
+    <p class="muted">第一次設定好後就不用再改（可存在瀏覽器）。</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="btnStart">開啟相機掃碼</button>
+      <button id="btnStop">停止</button>
+    </div>
+    <video id="video" playsinline></video>
+    <p id="status" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="barcode" placeholder="條碼（也可手動輸入）" autocomplete="off">
+      <button id="btnLookup">查詢</button>
+    </div>
+    <p id="info" class="muted">尚未查詢</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="qty" type="number" value="1" min="1">
+      <button id="btnOut">出庫(扣)</button>
+      <button id="btnIn">入庫(加)</button>
+    </div>
+    <input id="note" placeholder="備註（可空白）" style="width:100%; margin-top:8px;">
+    <p id="result" class="muted"></p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const store = {
+      get(k){ return localStorage.getItem(k) || ''; },
+      set(k,v){ localStorage.setItem(k,v); }
+    };
+
+    $('apiUrl').value = store.get('apiUrl');
+    $('apiKey').value = store.get('apiKey');
+
+    function getCfg(){
+      const apiUrl = $('apiUrl').value.trim();
+      const apiKey = $('apiKey').value.trim();
+      store.set('apiUrl', apiUrl);
+      store.set('apiKey', apiKey);
+      return { apiUrl, apiKey };
+    }
+
+    async function api(action, payload) {
+      const { apiUrl, apiKey } = getCfg();
+      if (!apiUrl || !apiKey) throw new Error('請先填 API URL / API Key');
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ key: apiKey, action, ...payload })
+      });
+      return await res.json();
+    }
+
+    async function lookup() {
+      const barcode = $('barcode').value.trim();
+      if (!barcode) return;
+      const data = await api('lookup', { barcode });
+
+      if (!data.ok) { $('info').innerHTML = `<span class="bad">查詢失敗：</span>${data.error}`; return; }
+      if (!data.found) { $('info').innerHTML = `<span class="bad">找不到商品：</span>${barcode}`; return; }
+
+      $('info').innerHTML =
+        `<b>${data.name}</b>（${data.unit || '-'}）<br>` +
+        `現存：<b>${data.qty}</b>　安全庫存：${data.safety_stock || 0}`;
+    }
+
+    async function move(deltaSign) {
+      const barcode = $('barcode').value.trim();
+      const qty = Number($('qty').value || 1);
+      const note = $('note').value.trim();
+      if (!barcode) return;
+
+      const delta = deltaSign * qty;
+      const data = await api('move', { barcode, delta, note });
+
+      if (data.ok === false && data.error === 'insufficient_stock') {
+        $('result').innerHTML = `<span class="bad">庫存不足</span>（目前 ${data.currentQty}）`;
+        return;
+      }
+      if (!data.ok) {
+        $('result').innerHTML = `<span class="bad">失敗：</span>${data.error || 'unknown'}`;
+        return;
+      }
+
+      $('result').innerHTML = `<span class="ok">成功</span> ${data.name} 變動 ${data.delta}，剩餘 ${data.afterQty}`;
+      await lookup();
+      $('note').value = '';
+    }
+
+    // 相機掃碼
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    let scanning = false;
+
+    async function startScan() {
+      if (scanning) return;
+      scanning = true;
+      $('status').textContent = '掃描中...';
+
+      try {
+        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        const deviceId = devices?.[devices.length - 1]?.deviceId; // 後鏡頭常在後面
+        await codeReader.decodeFromVideoDevice(deviceId, 'video', async (result, err) => {
+          if (result) {
+            const text = result.getText();
+            $('barcode').value = text;
+            $('result').innerHTML = `<span class="ok">掃到：</span>${text}`;
+            await lookup();
+            await new Promise(r => setTimeout(r, 1200));
+          }
+        });
+      } catch (e) {
+        $('status').innerHTML = `<span class="bad">無法啟動相機：</span>${e}`;
+        scanning = false;
+      }
+    }
+
+    function stopScan() {
+      scanning = false;
+      codeReader.reset();
+      $('status').textContent = '已停止掃描';
+    }
+
+    $('btnStart').onclick = startScan;
+    $('btnStop').onclick = stopScan;
+    $('btnLookup').onclick = lookup;
+    $('btnOut').onclick = () => move(-1);
+    $('btnIn').onclick = () => move(+1);
+  </script>
+</body>
+</html>
