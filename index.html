@@ -1,283 +1,47 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>庫存掃碼（外部版）</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
-      margin: 16px;
-      background: #fafafa;
-    }
-    .card {
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 12px;
-      margin-bottom: 12px;
-      background: #fff;
-    }
-    #video {
-      width: 100%;
-      border-radius: 12px;
-      background: #000;
-      min-height: 180px;
-    }
-    input, button {
-      font-size: 16px;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      box-sizing: border-box;
-    }
-    button {
-      border: none;
-      cursor: pointer;
-      background: #efefef;
-    }
-    .row {
-      display: flex;
-      gap: 8px;
-    }
-    .row > * {
-      flex: 1;
-    }
-    .muted {
-      color: #666;
-      font-size: 13px;
-    }
-    .ok { color: #0a7; }
-    .bad { color: #c00; }
-    #boot {
-      font-size: 13px;
-      color: #333;
-      margin-top: 8px;
-      white-space: pre-wrap;
-    }
-    #log {
-      white-space: pre-wrap;
-      font-size: 12px;
-      color: #444;
-      margin-top: 8px;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <label class="muted">Apps Script Web App /exec URL</label>
-    <input id="apiUrl" placeholder="貼上 https://script.google.com/.../exec" style="width:100%;">
-    <label class="muted" style="display:block; margin-top:8px;">API Key</label>
-    <input id="apiKey" placeholder="貼上 API Key" style="width:100%;">
-    <p class="muted">第一次設定好後會記在瀏覽器。</p>
-    <div id="boot">頁面載入中...</div>
-  </div>
+async function api(action, payload) {
+  saveConfig();
 
-  <div class="card">
-    <div class="row">
-      <button id="btnStart" type="button">開啟相機掃碼</button>
-      <button id="btnStop" type="button">停止</button>
-    </div>
-    <video id="video" playsinline></video>
-    <p id="status" class="muted"></p>
-    <div id="log"></div>
-  </div>
+  const apiUrl = $('apiUrl').value.trim();
+  const apiKey = $('apiKey').value.trim();
 
-  <div class="card">
-    <div class="row">
-      <input id="barcode" placeholder="條碼（也可手動輸入）" autocomplete="off">
-      <button id="btnLookup" type="button">查詢</button>
-    </div>
-    <p id="info" class="muted">尚未查詢</p>
-  </div>
+  if (!apiUrl) throw new Error('請先填 API URL');
+  if (!apiKey) throw new Error('請先填 API Key');
 
-  <div class="card">
-    <div class="row">
-      <input id="qty" type="number" value="1" min="1">
-      <button id="btnOut" type="button">出庫(扣)</button>
-      <button id="btnIn" type="button">入庫(加)</button>
-    </div>
-    <input id="note" placeholder="備註（可空白）" style="width:100%; margin-top:8px;">
-    <p id="result" class="muted"></p>
-  </div>
+  if (action === 'lookup') {
+    const url = new URL(apiUrl);
+    url.searchParams.set('action', 'lookup');
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('barcode', payload.barcode || '');
 
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0"></script>
-  <script>
-    const $ = (id) => document.getElementById(id);
-
-    let codeReader = null;
-    let scanning = false;
-
-    function log(msg) {
-      $('log').textContent += msg + '\n';
-    }
-
-    function saveConfig() {
-      localStorage.setItem('apiUrl', $('apiUrl').value.trim());
-      localStorage.setItem('apiKey', $('apiKey').value.trim());
-    }
-
-    function loadConfig() {
-      $('apiUrl').value = localStorage.getItem('apiUrl') || '';
-      $('apiKey').value = localStorage.getItem('apiKey') || '';
-    }
-
-    function ensureZXing() {
-      if (!window.ZXing) {
-        $('status').innerHTML = '<span class="bad">ZXing 掃碼庫沒有載入，先用手動查詢測試。</span>';
-        log('ZXing not loaded');
-        return false;
-      }
-      if (!codeReader) {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        log('ZXing loaded OK');
-      }
-      return true;
-    }
-
-    async function api(action, payload) {
-      saveConfig();
-
-      const apiUrl = $('apiUrl').value.trim();
-      const apiKey = $('apiKey').value.trim();
-
-      if (!apiUrl) throw new Error('請先填 API URL');
-      if (!apiKey) throw new Error('請先填 API Key');
-
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key: apiKey,
-          action,
-          ...payload
-        })
-      });
-
-      const text = await res.text();
-      log('API raw response: ' + text);
-
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        throw new Error('API 回應不是 JSON：' + text);
-      }
-    }
-
-    async function lookup() {
-      try {
-        const barcode = $('barcode').value.trim();
-        if (!barcode) {
-          $('info').innerHTML = '<span class="bad">請先輸入條碼</span>';
-          return;
-        }
-
-        $('info').textContent = '查詢中...';
-        const data = await api('lookup', { barcode });
-
-        if (!data.ok) {
-          $('info').innerHTML = `<span class="bad">查詢失敗：${data.error || 'unknown'}</span>`;
-          return;
-        }
-
-        if (!data.found) {
-          $('info').innerHTML = `<span class="bad">找不到商品：${barcode}</span>`;
-          return;
-        }
-
-        $('info').innerHTML =
-          `<b>${data.name}</b>（${data.unit || '-'}）<br>` +
-          `現存：<b>${data.qty}</b>　安全庫存：${data.safety_stock || 0}`;
-      } catch (e) {
-        $('info').innerHTML = `<span class="bad">查詢錯誤：${e.message || e}</span>`;
-        log('lookup error: ' + String(e));
-      }
-    }
-
-    async function move(deltaSign) {
-      try {
-        const barcode = $('barcode').value.trim();
-        const qty = Number($('qty').value || 1);
-        const note = $('note').value.trim();
-
-        if (!barcode) {
-          $('result').innerHTML = '<span class="bad">請先輸入條碼</span>';
-          return;
-        }
-
-        if (!Number.isFinite(qty) || qty <= 0) {
-          $('result').innerHTML = '<span class="bad">數量不正確</span>';
-          return;
-        }
-
-        const delta = deltaSign * qty;
-        $('result').textContent = '送出中...';
-
-        const data = await api('move', { barcode, delta, note });
-
-        if (!data.ok) {
-          $('result').innerHTML = `<span class="bad">失敗：${data.error || 'unknown'}</span>`;
-          return;
-        }
-
-        $('result').innerHTML = `<span class="ok">成功</span> ${data.name} 變動 ${data.delta}，剩餘 ${data.afterQty}`;
-        await lookup();
-        $('note').value = '';
-      } catch (e) {
-        $('result').innerHTML = `<span class="bad">送出錯誤：${e.message || e}</span>`;
-        log('move error: ' + String(e));
-      }
-    }
-
-    async function startScan() {
-      try {
-        if (!ensureZXing()) return;
-        if (scanning) return;
-
-        scanning = true;
-        $('status').textContent = '掃描中...';
-
-        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-        log('devices count: ' + (devices ? devices.length : 0));
-
-        const deviceId = devices?.[devices.length - 1]?.deviceId;
-        await codeReader.decodeFromVideoDevice(deviceId, 'video', async (result, err) => {
-          if (result) {
-            const text = result.getText();
-            $('barcode').value = text;
-            $('result').innerHTML = `<span class="ok">掃到：</span>${text}`;
-            await lookup();
-            await new Promise(r => setTimeout(r, 1200));
-          }
-        });
-      } catch (e) {
-        scanning = false;
-        $('status').innerHTML = `<span class="bad">無法啟動相機：${e.message || e}</span>`;
-        log('camera error: ' + String(e));
-      }
-    }
-
-    function stopScan() {
-      scanning = false;
-      if (codeReader) codeReader.reset();
-      $('status').textContent = '已停止掃描';
-    }
-
-    window.addEventListener('load', () => {
-      loadConfig();
-
-      $('btnStart').addEventListener('click', startScan);
-      $('btnStop').addEventListener('click', stopScan);
-      $('btnLookup').addEventListener('click', lookup);
-      $('btnOut').addEventListener('click', () => move(-1));
-      $('btnIn').addEventListener('click', () => move(+1));
-
-      $('barcode').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') lookup();
-      });
-
-      $('boot').textContent = '頁面已載入，按鈕事件已綁定';
-      log('page loaded');
+    const res = await fetch(url.toString(), {
+      method: 'GET'
     });
-  </script>
-</body>
-</html>
+
+    const text = await res.text();
+    log('API raw response: ' + text);
+    return JSON.parse(text);
+  }
+
+  if (action === 'move') {
+    const form = new URLSearchParams();
+    form.append('action', 'move');
+    form.append('key', apiKey);
+    form.append('barcode', payload.barcode || '');
+    form.append('delta', String(payload.delta || 0));
+    form.append('note', payload.note || '');
+
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+      },
+      body: form.toString()
+    });
+
+    const text = await res.text();
+    log('API raw response: ' + text);
+    return JSON.parse(text);
+  }
+
+  throw new Error('unknown action');
+}
