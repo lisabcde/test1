@@ -286,32 +286,28 @@
     }
 
     async function startScan() {
-      try {
-        if (!ensureZXing()) return;
-        if (scanning) return;
+  try {
+    if (!ensureZXing()) return;
+    if (scanning) return;
 
-        scanning = true;
-        $('status').textContent = '掃描中...';
+    scanning = true;
+    $('status').textContent = '掃描中...';
 
-        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-        log('camera devices count: ' + (devices ? devices.length : 0));
-
-        const deviceId = devices?.[devices.length - 1]?.deviceId;
-        await codeReader.decodeFromVideoDevice(deviceId, 'video', async (result, err) => {
-          if (result) {
-            const text = result.getText();
-            $('barcode').value = text;
-            $('result').innerHTML = `<span class="ok">掃到：</span>${text}`;
-            await lookup();
-            await new Promise(r => setTimeout(r, 1200));
-          }
-        });
-      } catch (e) {
-        scanning = false;
-        $('status').innerHTML = `<span class="bad">無法啟動相機：${e.message || e}</span>`;
-        log('camera error: ' + String(e));
+    await codeReader.decodeFromVideoDevice(undefined, 'video', async (result, err) => {
+      if (result) {
+        const text = result.getText();
+        $('barcode').value = text;
+        $('result').innerHTML = `<span class="ok">掃到：</span>${text}`;
+        await lookup();
+        await new Promise(r => setTimeout(r, 1200));
       }
-    }
+    });
+  } catch (e) {
+    scanning = false;
+    $('status').innerHTML = `<span class="bad">無法啟動相機：${e.message || e}</span>`;
+    log('camera error: ' + String(e));
+  }
+}
 
     function stopScan() {
       scanning = false;
@@ -340,4 +336,5 @@
   </script>
 </body>
 </html>
+
 
