@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-  <title>庫存掃碼系統</title>
+  <title>庫存管理系統</title>
   <style>
     body {
       font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
       margin: 16px;
-      background: #fafafa;
+      background: #f7f7f7;
       color: #222;
     }
     .card {
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 12px;
-      margin-bottom: 12px;
       background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 12px;
     }
     .row {
       display: flex;
@@ -25,27 +25,27 @@
     .row > * {
       flex: 1;
     }
-    input, button, textarea {
+    input, button {
       font-size: 16px;
-      padding: 10px;
+      padding: 12px;
       border-radius: 10px;
       border: 1px solid #ccc;
       box-sizing: border-box;
     }
     button {
       border: none;
+      background: #ececec;
       cursor: pointer;
-      background: #efefef;
     }
-    button:active {
-      transform: scale(0.99);
+    button.active {
+      background: #222;
+      color: #fff;
     }
     #video {
       width: 100%;
       min-height: 220px;
       background: #000;
       border-radius: 12px;
-      display: block;
       margin-top: 8px;
     }
     .muted {
@@ -58,61 +58,86 @@
     .bad {
       color: #c00;
     }
-    #boot, #log {
+    .title {
+      font-weight: 700;
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    #message, #log, #inventoryList {
       white-space: pre-wrap;
       word-break: break-word;
-    }
-    #boot {
-      font-size: 13px;
-      margin-top: 6px;
     }
     #log {
       font-size: 12px;
       color: #444;
-      margin-top: 8px;
       background: #f8f8f8;
       border-radius: 8px;
       padding: 8px;
-      min-height: 48px;
+      min-height: 40px;
+      margin-top: 8px;
+    }
+    .item {
+      border-bottom: 1px solid #eee;
+      padding: 8px 0;
+    }
+    .item:last-child {
+      border-bottom: none;
+    }
+    .low-stock {
+      color: #c00;
+      font-weight: 700;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <label class="muted">Apps Script Web App /exec URL</label>
-    <input id="apiUrl" placeholder="貼上 https://script.google.com/.../exec" style="width:100%;">
-    <label class="muted" style="display:block; margin-top:8px;">API Key</label>
-    <input id="apiKey" placeholder="貼上 API Key" style="width:100%;">
-    <p class="muted">第一次設定後會暫存在瀏覽器。</p>
-    <div id="boot">頁面載入中...</div>
+    <div class="title">庫存管理系統</div>
+    <input id="apiUrl" placeholder="Apps Script /exec URL" style="width:100%; margin-bottom:8px;">
+    <input id="apiKey" placeholder="API Key" style="width:100%;">
+    <div id="boot" class="muted" style="margin-top:8px;">頁面載入中...</div>
   </div>
 
   <div class="card">
     <div class="row">
-      <button id="btnStart" type="button">開啟相機掃碼</button>
-      <button id="btnStop" type="button">停止</button>
+      <button id="btnModeOut" type="button">出庫模式</button>
+      <button id="btnModeIn" type="button">入庫模式</button>
+      <button id="btnList" type="button">總庫存</button>
     </div>
+    <div class="muted" style="margin-top:8px;">
+      目前模式：<span id="modeText">未選擇</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <button id="btnStart" type="button" style="width:100%;">開啟相機掃碼</button>
     <video id="video" playsinline muted></video>
-    <p id="status" class="muted">尚未啟動掃碼</p>
-    <div id="log"></div>
+    <div id="status" class="muted" style="margin-top:8px;">尚未啟動掃碼</div>
   </div>
 
   <div class="card">
     <div class="row">
       <input id="barcode" placeholder="條碼（也可手動輸入）" autocomplete="off">
-      <button id="btnLookup" type="button">查詢</button>
+      <button id="btnRun" type="button">執行</button>
     </div>
-    <p id="info" class="muted">尚未查詢</p>
+    <div id="message" style="margin-top:8px;">請先選模式</div>
+  </div>
+
+  <div class="card" id="inQtyBox" style="display:none;">
+    <div class="muted">入庫數量</div>
+    <div class="row" style="margin-top:8px;">
+      <input id="inQty" type="number" min="1" value="1">
+      <button id="btnConfirmIn" type="button">確認入庫</button>
+    </div>
   </div>
 
   <div class="card">
-    <div class="row">
-      <input id="qty" type="number" value="1" min="1">
-      <button id="btnOut" type="button">出庫(扣)</button>
-      <button id="btnIn" type="button">入庫(加)</button>
-    </div>
-    <input id="note" placeholder="備註（可空白）" style="width:100%; margin-top:8px;">
-    <p id="result" class="muted">尚未送出</p>
+    <div class="title" style="font-size:16px;">總庫存</div>
+    <div id="inventoryList" class="muted">尚未載入</div>
+  </div>
+
+  <div class="card">
+    <div class="title" style="font-size:16px;">系統訊息</div>
+    <div id="log"></div>
   </div>
 
   <script src="./zxing.min.js"></script>
@@ -121,15 +146,12 @@
 
     let codeReader = null;
     let scanning = false;
+    let currentMode = '';
+    let pendingInBarcode = '';
 
     function log(msg) {
-      const box = $('log');
-      const time = new Date().toLocaleTimeString();
-      box.textContent += `[${time}] ${msg}\n`;
-    }
-
-    function clearLog() {
-      $('log').textContent = '';
+      const t = new Date().toLocaleTimeString();
+      $('log').textContent += `[${t}] ${msg}\n`;
     }
 
     function saveConfig() {
@@ -142,10 +164,31 @@
       $('apiKey').value = localStorage.getItem('apiKey') || '';
     }
 
+    function setMode(mode) {
+      currentMode = mode;
+      $('btnModeOut').classList.remove('active');
+      $('btnModeIn').classList.remove('active');
+      $('inQtyBox').style.display = 'none';
+      pendingInBarcode = '';
+
+      if (mode === 'out') {
+        $('btnModeOut').classList.add('active');
+        $('modeText').textContent = '出庫模式';
+        $('message').innerHTML = '請掃描或輸入條碼，<b>每次扣 1</b>';
+      } else if (mode === 'in') {
+        $('btnModeIn').classList.add('active');
+        $('modeText').textContent = '入庫模式';
+        $('message').innerHTML = '請掃描或輸入條碼，之後輸入入庫數量';
+      } else {
+        $('modeText').textContent = '未選擇';
+        $('message').textContent = '請先選模式';
+      }
+    }
+
     function ensureZXing() {
       if (!window.ZXing) {
-        $('status').innerHTML = '<span class="bad">ZXing 掃碼庫沒有載入，請先用手動查詢。</span>';
         log('ZXing not loaded');
+        $('status').innerHTML = '<span class="bad">ZXing 沒有載入</span>';
         return false;
       }
       if (!codeReader) {
@@ -164,27 +207,19 @@
       if (!apiUrl) throw new Error('請先填 API URL');
       if (!apiKey) throw new Error('請先填 API Key');
 
-      if (action === 'lookup') {
+      if (action === 'lookup' || action === 'list_inventory') {
         const url = new URL(apiUrl);
-        url.searchParams.set('action', 'lookup');
+        url.searchParams.set('action', action);
         url.searchParams.set('key', apiKey);
-        url.searchParams.set('barcode', payload.barcode || '');
 
-        log('lookup GET: ' + url.toString());
-
-        const res = await fetch(url.toString(), {
-          method: 'GET',
-          redirect: 'follow'
-        });
-
-        const text = await res.text();
-        log('lookup response: ' + text);
-
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          throw new Error('lookup 回應不是 JSON：' + text);
+        if (payload?.barcode) {
+          url.searchParams.set('barcode', payload.barcode);
         }
+
+        const res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' });
+        const text = await res.text();
+        log(`${action} response: ${text}`);
+        return JSON.parse(text);
       }
 
       if (action === 'move') {
@@ -195,146 +230,193 @@
         form.append('delta', String(payload.delta || 0));
         form.append('note', payload.note || '');
 
-        log('move POST to: ' + apiUrl);
-        log('move body: ' + form.toString());
-
         const res = await fetch(apiUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-          },
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
           body: form.toString(),
           redirect: 'follow'
         });
 
         const text = await res.text();
-        log('move response: ' + text);
-
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          throw new Error('move 回應不是 JSON：' + text);
-        }
+        log(`move response: ${text}`);
+        return JSON.parse(text);
       }
 
       throw new Error('unknown action');
     }
 
-    async function lookup() {
+    async function runOut(barcode) {
+      const data = await api('move', {
+        barcode,
+        delta: -1,
+        note: '出庫'
+      });
+
+      if (!data.ok) {
+        $('message').innerHTML = `<span class="bad">出庫失敗：${data.error}</span>`;
+        return;
+      }
+
+      $('message').innerHTML =
+        `<span class="ok">出庫成功</span>\n` +
+        `${data.name}\n` +
+        `扣 1，剩餘 ${data.afterQty}`;
+
+      await loadInventory();
+    }
+
+    async function prepareIn(barcode) {
+      const info = await api('lookup', { barcode });
+
+      if (!info.ok || !info.found) {
+        $('message').innerHTML = `<span class="bad">找不到商品：${barcode}</span>`;
+        return;
+      }
+
+      pendingInBarcode = barcode;
+      $('inQtyBox').style.display = 'block';
+      $('message').innerHTML =
+        `商品：<b>${info.name}</b>\n目前庫存：${info.qty}\n請輸入入庫數量`;
+      $('inQty').focus();
+    }
+
+    async function confirmIn() {
       try {
-        const barcode = $('barcode').value.trim();
-        if (!barcode) {
-          $('info').innerHTML = '<span class="bad">請先輸入條碼</span>';
+        const qty = Number($('inQty').value || 0);
+        if (!pendingInBarcode) {
+          $('message').innerHTML = '<span class="bad">請先掃描商品</span>';
+          return;
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+          $('message').innerHTML = '<span class="bad">請輸入正確數量</span>';
           return;
         }
 
-        $('info').textContent = '查詢中...';
-        const data = await api('lookup', { barcode });
+        const data = await api('move', {
+          barcode: pendingInBarcode,
+          delta: qty,
+          note: '入庫'
+        });
 
         if (!data.ok) {
-          $('info').innerHTML = `<span class="bad">查詢失敗：${data.error || 'unknown'}</span>`;
+          $('message').innerHTML = `<span class="bad">入庫失敗：${data.error}</span>`;
           return;
         }
 
-        if (!data.found) {
-          $('info').innerHTML = `<span class="bad">找不到商品：${barcode}</span>`;
-          return;
-        }
+        $('message').innerHTML =
+          `<span class="ok">入庫成功</span>\n` +
+          `${data.name}\n` +
+          `加 ${qty}，剩餘 ${data.afterQty}`;
 
-        $('info').innerHTML =
-          `<b>${data.name}</b>（${data.unit || '-'}）<br>` +
-          `現存：<b>${data.qty}</b>　安全庫存：${data.safety_stock || 0}`;
+        pendingInBarcode = '';
+        $('inQtyBox').style.display = 'none';
+        $('inQty').value = 1;
+
+        await loadInventory();
       } catch (e) {
-        $('info').innerHTML = `<span class="bad">查詢錯誤：${e.message || e}</span>`;
-        log('lookup error: ' + String(e));
+        $('message').innerHTML = `<span class="bad">入庫錯誤：${e.message || e}</span>`;
+        log('confirmIn error: ' + String(e));
       }
     }
 
-    async function move(deltaSign) {
+    async function handleBarcode(barcode) {
+      $('barcode').value = barcode;
+
+      if (!currentMode) {
+        $('message').innerHTML = '<span class="bad">請先選模式</span>';
+        return;
+      }
+
+      if (currentMode === 'out') {
+        await runOut(barcode);
+        return;
+      }
+
+      if (currentMode === 'in') {
+        await prepareIn(barcode);
+      }
+    }
+
+    async function loadInventory() {
       try {
-        const barcode = $('barcode').value.trim();
-        const qty = Number($('qty').value || 1);
-        const note = $('note').value.trim();
-
-        if (!barcode) {
-          $('result').innerHTML = '<span class="bad">請先輸入條碼</span>';
-          return;
-        }
-
-        if (!Number.isFinite(qty) || qty <= 0) {
-          $('result').innerHTML = '<span class="bad">數量不正確</span>';
-          return;
-        }
-
-        const delta = deltaSign * qty;
-        $('result').textContent = '送出中...';
-
-        const data = await api('move', { barcode, delta, note });
-
+        const data = await api('list_inventory', {});
         if (!data.ok) {
-          $('result').innerHTML = `<span class="bad">失敗：${data.error || 'unknown'}</span>`;
+          $('inventoryList').innerHTML = `<span class="bad">載入失敗：${data.error}</span>`;
           return;
         }
 
-        $('result').innerHTML = `<span class="ok">成功</span> ${data.name} 變動 ${data.delta}，剩餘 ${data.afterQty}`;
-        await lookup();
-        $('note').value = '';
+        if (!data.items || data.items.length === 0) {
+          $('inventoryList').textContent = '沒有商品';
+          return;
+        }
+
+        $('inventoryList').innerHTML = data.items.map(item => {
+          const low = item.qty <= item.safety_stock;
+          return `
+            <div class="item">
+              <div><b>${item.name}</b> (${item.unit || '-'})</div>
+              <div>條碼：${item.barcode}</div>
+              <div class="${low ? 'low-stock' : ''}">
+                庫存：${item.qty} / 安全庫存：${item.safety_stock}
+              </div>
+            </div>
+          `;
+        }).join('');
       } catch (e) {
-        $('result').innerHTML = `<span class="bad">送出錯誤：${e.message || e}</span>`;
-        log('move error: ' + String(e));
+        $('inventoryList').innerHTML = `<span class="bad">載入錯誤：${e.message || e}</span>`;
+        log('loadInventory error: ' + String(e));
       }
     }
 
     async function startScan() {
-  try {
-    if (!ensureZXing()) return;
-    if (scanning) return;
+      try {
+        if (!ensureZXing()) return;
+        if (scanning) return;
 
-    scanning = true;
-    $('status').textContent = '掃描中...';
+        scanning = true;
+        $('status').textContent = '掃描中...';
 
-    await codeReader.decodeFromVideoDevice(undefined, 'video', async (result, err) => {
-      if (result) {
-        const text = result.getText();
-        $('barcode').value = text;
-        $('result').innerHTML = `<span class="ok">掃到：</span>${text}`;
-        await lookup();
-        await new Promise(r => setTimeout(r, 1200));
+        await codeReader.decodeFromVideoDevice(undefined, 'video', async (result, err) => {
+          if (result) {
+            const text = result.getText();
+            await handleBarcode(text);
+            await new Promise(r => setTimeout(r, 1200));
+          }
+        });
+      } catch (e) {
+        scanning = false;
+        $('status').innerHTML = `<span class="bad">無法啟動相機：${e.message || e}</span>`;
+        log('camera error: ' + String(e));
       }
-    });
-  } catch (e) {
-    scanning = false;
-    $('status').innerHTML = `<span class="bad">無法啟動相機：${e.message || e}</span>`;
-    log('camera error: ' + String(e));
-  }
-}
-
-    function stopScan() {
-      scanning = false;
-      if (codeReader) codeReader.reset();
-      $('status').textContent = '已停止掃描';
-      log('scan stopped');
     }
 
-    window.addEventListener('load', () => {
-      loadConfig();
-      clearLog();
+    function runManual() {
+      const barcode = $('barcode').value.trim();
+      if (!barcode) {
+        $('message').innerHTML = '<span class="bad">請輸入條碼</span>';
+        return;
+      }
+      handleBarcode(barcode);
+    }
 
+    window.addEventListener('load', async () => {
+      loadConfig();
+
+      $('btnModeOut').addEventListener('click', () => setMode('out'));
+      $('btnModeIn').addEventListener('click', () => setMode('in'));
+      $('btnList').addEventListener('click', loadInventory);
       $('btnStart').addEventListener('click', startScan);
-      $('btnStop').addEventListener('click', stopScan);
-      $('btnLookup').addEventListener('click', lookup);
-      $('btnOut').addEventListener('click', () => move(-1));
-      $('btnIn').addEventListener('click', () => move(+1));
+      $('btnRun').addEventListener('click', runManual);
+      $('btnConfirmIn').addEventListener('click', confirmIn);
 
       $('barcode').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') lookup();
+        if (e.key === 'Enter') runManual();
       });
 
       $('boot').textContent = 'page loaded';
       log('page loaded');
+      await loadInventory();
     });
   </script>
 </body>
 </html>
-
-
